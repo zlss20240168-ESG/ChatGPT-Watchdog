@@ -1,0 +1,58 @@
+name: Build Windows EXE
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'requirements.txt'
+      - '.github/workflows/build-windows.yml'
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile check
+        shell: pwsh
+        run: |
+          python -m py_compile src/watchdog.py src/app.py
+
+      - name: Build Windows x64 EXE
+        shell: pwsh
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name ChatGPT-Watchdog-v1.0.0-Windows-x64 --paths src src/app.py
+
+      - name: Verify PE executable exists
+        shell: pwsh
+        run: |
+          $exe = 'dist/ChatGPT-Watchdog-v1.0.0-Windows-x64.exe'
+          if (!(Test-Path $exe)) { throw 'EXE not produced' }
+          $bytes = [System.IO.File]::ReadAllBytes($exe)
+          if ($bytes.Length -lt 2 -or $bytes[0] -ne 0x4D -or $bytes[1] -ne 0x5A) { throw 'Output is not a Windows PE/MZ executable' }
+          Write-Host "Verified Windows PE executable: $exe"
+
+      - name: Upload Windows EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ChatGPT-Watchdog-v1.0.0-Windows-x64
+          path: dist/ChatGPT-Watchdog-v1.0.0-Windows-x64.exe
+          if-no-files-found: error
